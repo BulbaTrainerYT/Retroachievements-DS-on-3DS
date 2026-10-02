@@ -37,17 +37,19 @@ jobs:
           gcc lzss.c -o /usr/local/bin/lzss
 
       - name: Which toolchain this ran on
-        run: arm-none-eabi-gcc --version | head -1
+        run: /opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc --version | head -1
 
       - name: Setup environment
         run: git config --global safe.directory '*'
 
-      # Do not call ra_release.sh here. It sends both makes to /dev/null, then exits 1
-      # on a later check, and a fallback make RA_LAUNCHER_WIFI=0 succeeds and hides the
-      # network-build error. Build the deliverable directly and refuse it ourselves if
-      # dsiwifi was not linked.
+      # make finds the toolchain through the Makefile. A later shell line does not,
+      # so arm-none-eabi-nm was "not found" and the wifi count was 0 even after a
+      # successful RA_LAUNCHER_WIFI=2 build. Call nm by absolute path.
       - name: Build RA release
         run: |
+          export DEVKITPRO=/opt/devkitpro
+          export DEVKITARM=/opt/devkitpro/devkitARM
+          export PATH="$DEVKITARM/bin:$PATH"
           make clean
           make RA_LAUNCHER_WIFI=2
           WIFI=$(arm-none-eabi-nm retail/arm7/nds-bootstrap.elf | grep -ci 'dsiwifi\|wifi_' || true)
