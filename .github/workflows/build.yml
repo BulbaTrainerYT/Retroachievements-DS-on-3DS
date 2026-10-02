@@ -15,9 +15,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # libnds 2.x, which is what :latest carries, removed nds/fifocommon.h. This tree
-    # builds against libnds 1.8.0, pinned by devkitpro/devkitarm:20241104. That image
-    # is Debian 11, whose security pocket 404s, so apt is pointed at the archive first.
+    # libnds 2.x removed nds/fifocommon.h. This tree builds against libnds 1.8.0.
     container: devkitpro/devkitarm:20241104
     name: Build RA release with devkitARM
     steps:
@@ -28,13 +26,9 @@ jobs:
 
       - name: Install host tools
         run: |
-          # Bullseye has moved to the archive. The security line names a package version
-          # the mirror no longer serves, which is the 404 that made this pin look broken.
           sed -i 's|deb.debian.org|archive.debian.org|g; s|security.debian.org|archive.debian.org|g' /etc/apt/sources.list
           sed -i '/debian-security/d' /etc/apt/sources.list
           printf 'Acquire::Check-Valid-Until "false";\n' > /etc/apt/apt.conf.d/99no-check-valid
-          # gcc alone does not pull libc6-dev when recommends are off, and lzss.c
-          # then fails on stdio.h. libc6-dev is the header package.
           for i in 1 2 3; do
             apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev && break
             echo "apt attempt $i failed; retrying"
@@ -48,15 +42,22 @@ jobs:
       - name: Setup environment
         run: git config --global safe.directory '*'
 
-      # ra_release.sh hides the first make's output. On failure, rebuild visibly.
+      # Do not call ra_release.sh here. It sends both makes to /dev/null, then exits 1
+      # on a later check, and a fallback make RA_LAUNCHER_WIFI=0 succeeds and hides the
+      # network-build error. Build the deliverable directly and refuse it ourselves if
+      # dsiwifi was not linked.
       - name: Build RA release
         run: |
-          bash tools/ra_release.sh nds-bootstrap-release.nds || status=$?
-          if [ "${status:-0}" -ne 0 ]; then
-            echo "ra_release.sh failed ($status); rebuilding visibly"
-            make RA_LAUNCHER_WIFI=0
-            exit "$status"
+          make clean
+          make RA_LAUNCHER_WIFI=2
+          WIFI=$(arm-none-eabi-nm retail/arm7/nds-bootstrap.elf | grep -ci 'dsiwifi\|wifi_' || true)
+          echo "wifi symbols: $WIFI"
+          if [ "$WIFI" -lt 20 ]; then
+            echo "REFUSING: ARM7 has $WIFI wifi symbols, not a network build"
+            exit 1
           fi
+          cp retail/bin/nds-bootstrap.nds nds-bootstrap-release.nds
+          md5sum nds-bootstrap-release.nds
 
       - name: Publish ROM
         uses: actions/upload-artifact@v4
