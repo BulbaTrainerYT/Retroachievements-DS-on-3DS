@@ -15,10 +15,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Unpinned on purpose. devkitpro/devkitarm:20241104 is bullseye, and its apt
-    # security pocket 404s, so a pin there never installs. The toolchain version
-    # is printed below so drift is visible in the log.
-    container: devkitpro/devkitarm:latest
+    # libnds 2.x, which is what :latest carries, removed nds/fifocommon.h. This tree
+    # builds against libnds 1.8.0, pinned by devkitpro/devkitarm:20241104. That image
+    # is Debian 11, whose security pocket 404s, so apt is pointed at the archive first.
+    container: devkitpro/devkitarm:20241104
     name: Build RA release with devkitARM
     steps:
       - name: Checkout repo
@@ -28,8 +28,11 @@ jobs:
 
       - name: Install host tools
         run: |
-          # gcc builds lzss, which ra_release.sh needs on PATH. Retried because a
-          # mirror briefly out of step with its index is how this workflow used to fail.
+          # Bullseye has moved to the archive. The security line names a package version
+          # the mirror no longer serves, which is the 404 that made this pin look broken.
+          sed -i 's|deb.debian.org|archive.debian.org|g; s|security.debian.org|archive.debian.org|g' /etc/apt/sources.list
+          sed -i '/debian-security/d' /etc/apt/sources.list
+          printf 'Acquire::Check-Valid-Until "false";\n' > /etc/apt/apt.conf.d/99no-check-valid
           for i in 1 2 3; do
             apt-get update && apt-get install -y --no-install-recommends gcc && break
             echo "apt attempt $i failed; retrying"
@@ -43,13 +46,7 @@ jobs:
       - name: Setup environment
         run: git config --global safe.directory '*'
 
-      # tools/ra_release.sh cleans, proves RA_LAUNCHER_WIFI=0 still compiles, then
-      # builds the deliverable at RA_LAUNCHER_WIFI=2. It refuses to emit a ROM whose
-      # ARM7 has no dsiwifi symbols, and it runs the host suite before it will copy
-      # retail/bin/nds-bootstrap.nds. make package-nightly does none of that.
-      #
-      # The script sends that first make's output to /dev/null, so a compile failure
-      # is only "exit code 2". On failure, rebuild visibly so the log has the error.
+      # ra_release.sh hides the first make's output. On failure, rebuild visibly.
       - name: Build RA release
         run: |
           bash tools/ra_release.sh nds-bootstrap-release.nds || status=$?
