@@ -33,8 +33,10 @@ jobs:
           sed -i 's|deb.debian.org|archive.debian.org|g; s|security.debian.org|archive.debian.org|g' /etc/apt/sources.list
           sed -i '/debian-security/d' /etc/apt/sources.list
           printf 'Acquire::Check-Valid-Until "false";\n' > /etc/apt/apt.conf.d/99no-check-valid
+          # gcc alone does not pull libc6-dev when recommends are off, and lzss.c
+          # then fails on stdio.h. libc6-dev is the header package.
           for i in 1 2 3; do
-            apt-get update && apt-get install -y --no-install-recommends gcc && break
+            apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev && break
             echo "apt attempt $i failed; retrying"
             sleep 10
           done
